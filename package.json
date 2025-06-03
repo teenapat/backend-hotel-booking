@@ -24,6 +24,8 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "axios": "^1.9.0",
+    "body-parser": "^2.2.0",
+    "crypto": "^1.0.1",
     "dotenv": "^16.5.0",
     "omise": "^1.0.0",
     "reflect-metadata": "^0.2.2",

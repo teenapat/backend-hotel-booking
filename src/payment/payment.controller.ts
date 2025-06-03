@@ -2,9 +2,12 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Headers,
+  HttpCode,
   Post,
   Req,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
   CreatePaymentDto,
   CreateSourceDto,
@@ -14,8 +17,9 @@ import { PaymentService } from './payment.service';
 
 @Controller('payment')
 export class PaymentController {
-  constructor(private readonly paymentService: PaymentService) {}
+  private readonly omiseSecretKey = process.env.OMISE_SECRET_KEY!;
 
+  constructor(private readonly paymentService: PaymentService) {}
   @Post('source')
   async createSource(@Body() body: CreateSourceDto) {
     return this.paymentService.createPromptPaySource(body.amount);
@@ -37,14 +41,31 @@ export class PaymentController {
   }
 
   @Post('webhook')
-  async webhook(@Req() req) {
-    const event = req.body;
-    console.log('🔔 Webhook Event:', event);
+  @HttpCode(200)
+  async handleWebhook(
+    @Headers('X-Omise-Signature') omiseSignature: string,
+    @Body() body: any,
+    @Req() req: any,
+  ) {
+    const rawBody = req.rawBody || JSON.stringify(body);
+    const computedSignature = crypto
+      .createHmac('sha256', this.omiseSecretKey)
+      .update(rawBody, 'utf8')
+      .digest('base64');
 
-    if (event.data?.object === 'charge') {
-      const charge = event.data;
-      console.log(`Charge ${charge.id} updated: ${charge.status}`);
-      // TODO: Update booking/payment status in DB
+    if (computedSignature !== omiseSignature) {
+      throw new BadRequestException('Invalid signature');
+    }
+
+    const charge = body.data;
+    if (charge?.object === 'charge') {
+      if (charge.status === 'successful') {
+        console.log(`Charge successful: ${charge.id}`);
+      } else if (charge.status === 'failed') {
+        console.log(
+          `Charge failed: ${charge.id}, Reason: ${charge.failure_code}`,
+        );
+      }
     }
 
     return { received: true };
