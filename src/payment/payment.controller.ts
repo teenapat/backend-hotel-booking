@@ -20,6 +20,7 @@ export class PaymentController {
   private readonly omiseSecretKey = process.env.OMISE_SECRET_KEY!;
 
   constructor(private readonly paymentService: PaymentService) {}
+
   @Post('source')
   async createSource(@Body() body: CreateSourceDto) {
     return this.paymentService.createPromptPaySource(body.amount);
@@ -53,21 +54,14 @@ export class PaymentController {
       .update(rawBody, 'utf8')
       .digest('base64');
 
+    // console.log(computedSignature, omiseSignature);
+
     if (computedSignature !== omiseSignature) {
-      throw new BadRequestException('Invalid signature');
+      return { received: false };
     }
 
-    const charge = body.data;
-    if (charge?.object === 'charge') {
-      if (charge.status === 'successful') {
-        console.log(`Charge successful: ${charge.id}`);
-      } else if (charge.status === 'failed') {
-        console.log(
-          `Charge failed: ${charge.id}, Reason: ${charge.failure_code}`,
-        );
-      }
-    }
-
+    const eventType = body.key || body.data?.object || 'unknown';
+    await this.paymentService.saveWebhookEvent(eventType, body);
     return { received: true };
   }
 }

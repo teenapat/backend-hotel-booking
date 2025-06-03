@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as dotenv from 'dotenv';
+import { Pool } from 'pg';
 dotenv.config();
 
 @Injectable()
@@ -15,6 +16,8 @@ export class PaymentService {
     const auth = Buffer.from(`${key}:`).toString('base64');
     return `Basic ${auth}`;
   }
+
+  constructor(@Inject('PG_POOL') private readonly pool: Pool) {}
 
   async createPromptPaySource(amount: number) {
     try {
@@ -100,6 +103,18 @@ export class PaymentService {
         error.response?.data || error.message,
       );
       throw error;
+    }
+  }
+
+  async saveWebhookEvent(eventType: string, eventData: any) {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        'INSERT INTO omise_webhook_events (event_type, event_data) VALUES ($1, $2)',
+        [eventType, eventData],
+      );
+    } finally {
+      client.release();
     }
   }
 }
