@@ -2,12 +2,12 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Headers,
   HttpCode,
   Post,
   Req,
 } from '@nestjs/common';
-import * as crypto from 'crypto';
+import { Request } from 'express';
+import * as Omise from 'omise';
 import {
   CreatePaymentDto,
   CreateSourceDto,
@@ -17,6 +17,10 @@ import { PaymentService } from './payment.service';
 
 @Controller('payment')
 export class PaymentController {
+  private readonly omise = Omise({
+    publicKey: process.env.OMISE_PUBLIC_KEY!,
+    secretKey: process.env.OMISE_SECRET_KEY!,
+  });
   private readonly omiseSecretKey = process.env.OMISE_SECRET_KEY!;
 
   constructor(private readonly paymentService: PaymentService) {}
@@ -43,25 +47,20 @@ export class PaymentController {
 
   @Post('webhook')
   @HttpCode(200)
-  async handleWebhook(
-    @Headers('X-Omise-Signature') omiseSignature: string,
-    @Body() body: any,
-    @Req() req: any,
-  ) {
-    const rawBody = req.rawBody || JSON.stringify(body);
-    const computedSignature = crypto
-      .createHmac('sha256', this.omiseSecretKey)
-      .update(rawBody, 'utf8')
-      .digest('base64');
+  async handleWebhook(@Req() req: Request) {
+    const rawBody = (req.body as Buffer).toString('utf8');
+    const event = JSON.parse(rawBody);
+    const eventId = event.id;
 
-    // console.log(computedSignature, omiseSignature);
+    const verified = await this.omise.events.retrieve(eventId);
 
-    if (computedSignature !== omiseSignature) {
-      return { received: false };
+    if (
+      verified?.key === 'charge.create' &&
+      verified?.data?.status === 'successful'
+    ) {
+      await this.paymentService.saveWebhookEvent(verified.key, verified.data);
     }
 
-    const eventType = body.key || body.data?.object || 'unknown';
-    await this.paymentService.saveWebhookEvent(eventType, body);
     return { received: true };
   }
 }
